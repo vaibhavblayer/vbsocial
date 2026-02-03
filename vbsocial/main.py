@@ -16,6 +16,8 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
         "linkedin": "vbsocial.linkedin.linkedin:linkedin",
         "x": "vbsocial.x.x:x",
         "youtube": "vbsocial.youtube.youtube:youtube",
+        "create-post": "vbsocial.post.create:create_post",
+        "post-all": "vbsocial.post.post_all:post_all",
     },
 )
 def main():
