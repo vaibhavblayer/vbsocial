@@ -6,7 +6,7 @@ from pathlib import Path
 import click
 import yaml
 
-from ..facebook.commands.photo import post_photo as fb_post_photo
+from ..facebook.commands.photo import post_photo as fb_post_photo, post_multiple_photos as fb_post_multiple
 from ..instagram.commands.photo import post_photo as ig_post_photo, post_carousel as ig_post_carousel
 from ..linkedin.linkedinpost import LinkedInPost
 from ..x.auth import create_oauth_session
@@ -40,11 +40,13 @@ def get_images(post_path: Path) -> list[Path]:
 
 
 def post_to_facebook(images: list[Path], caption: str) -> None:
-    """Post to Facebook."""
+    """Post to Facebook (supports multiple images)."""
     click.echo("\n📘 Posting to Facebook...")
-    for img in images:
-        fb_post_photo(str(img), caption)
-        caption = ""  # Only first image gets caption
+    if len(images) == 1:
+        fb_post_photo(str(images[0]), caption)
+    else:
+        fb_post_multiple([str(img) for img in images], caption)
+    click.echo("✓ Posted to Facebook")
 
 
 def post_to_instagram(images: list[Path], caption: str) -> None:
@@ -57,16 +59,15 @@ def post_to_instagram(images: list[Path], caption: str) -> None:
 
 
 def post_to_linkedin(images: list[Path], caption: str) -> None:
-    """Post to LinkedIn."""
+    """Post to LinkedIn (supports multiple images via MultiImage API)."""
     import os
     click.echo("\n💼 Posting to LinkedIn...")
     
     org_id = os.getenv("LINKEDIN_ORGANIZATION_ID")
     post = LinkedInPost(organization_id=org_id)
     
-    # LinkedIn only supports single image via API
     if images:
-        post.create_post_with_image(caption, str(images[0]))
+        post.create_post_with_images(caption, [str(img) for img in images])
     else:
         post.create_text_post(caption)
     

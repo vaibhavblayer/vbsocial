@@ -18,6 +18,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
         "youtube": "vbsocial.youtube.youtube:youtube",
         "create-post": "vbsocial.post.create:create_post",
         "post-all": "vbsocial.post.post_all:post_all",
+        "stats": "vbsocial.stats.all:stats",
     },
 )
 def main():
