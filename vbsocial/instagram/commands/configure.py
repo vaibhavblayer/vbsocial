@@ -162,8 +162,47 @@ def configure() -> None:
     # Use the page access token
     config["access_token"] = config["page_access_token"]
     
-    # Set expiry (page tokens are long-lived, ~60 days)
+    # Exchange for long-lived page token immediately
+    click.echo("\nExchanging for long-lived token...")
+    
+    # First exchange user token for long-lived user token
+    exchange_url = f"https://graph.facebook.com/{API_VERSION}/oauth/access_token"
+    exchange_resp = session.get(
+        exchange_url,
+        params={
+            "grant_type": "fb_exchange_token",
+            "client_id": app_id,
+            "client_secret": app_secret,
+            "fb_exchange_token": initial_token,
+        },
+        timeout=DEFAULT_TIMEOUT,
+    )
+    
+    if exchange_resp.status_code == 200:
+        long_lived_user_token = exchange_resp.json().get("access_token")
+        
+        # Now get the page token with the long-lived user token
+        # Page tokens derived from long-lived user tokens are also long-lived
+        page_token_resp = session.get(
+            f"https://graph.facebook.com/{API_VERSION}/{page['id']}",
+            params={"fields": "access_token", "access_token": long_lived_user_token},
+            timeout=DEFAULT_TIMEOUT,
+        )
+        
+        if page_token_resp.status_code == 200:
+            long_lived_page_token = page_token_resp.json().get("access_token")
+            config["access_token"] = long_lived_page_token
+            config["long_lived_user_token"] = long_lived_user_token
+            click.echo("✓ Long-lived token obtained!")
+        else:
+            click.echo("⚠️  Could not get long-lived page token, using original")
+    else:
+        click.echo("⚠️  Could not exchange for long-lived token, using original")
+    
+    # Set expiry - long-lived page tokens don't expire if derived from long-lived user token
+    # But we set 60 days as a safety check
     config["token_expiry"] = datetime.now().timestamp() + (60 * 24 * 60 * 60)
+    config["token_created"] = datetime.now().isoformat()
     
     save_config(config)
     

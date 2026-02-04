@@ -1,0 +1,78 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{post}[2026/02/04 Social media post package]
+
+% Geometry - 5in square
+\RequirePackage[paperwidth=5in, paperheight=5in, margin=0.25in]{geometry}
+
+% Math fonts - Utopia
+\RequirePackage{fourier}
+\RequirePackage{amsmath, amssymb}
+
+% Use display fractions everywhere
+\renewcommand{\tfrac}{\dfrac}
+\renewcommand{\frac}{\dfrac}
+
+% Graphics
+\RequirePackage{tikz}
+\RequirePackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Code highlighting
+\RequirePackage{minted}
+\RequirePackage{fvextra}
+\RequirePackage{xcolor}
+\RequirePackage{pagecolor}
+
+% PDF inclusion
+\RequirePackage{pdfpages}
+
+% Multiple choice options
+\RequirePackage{tasks}
+
+% Colors
+\definecolor{bg}{HTML}{282C34}
+\definecolor{accent}{HTML}{61AFEF}
+\definecolor{codetitle}{HTML}{E5C07B}
+
+% Minted settings - one-dark theme
+\setminted{
+    style=one-dark,
+    bgcolor=bg,
+    fontsize=\small,
+    breaklines,
+    breakanywhere,
+    autogobble,
+    frame=none
+}
+
+% Custom environments with pagebreak and centered small caps title
+\newenvironment{solution}{%
+    \pagebreak
+    \begin{center}\textsc{Solution}\end{center}
+    \par
+}{}
+
+\newenvironment{idea}{%
+    \pagebreak
+    \begin{center}\textsc{Key Idea}\end{center}
+    \par
+}{}
+
+\newenvironment{alternatesolution}{%
+    \pagebreak
+    \begin{center}\textsc{Alternate Solution}\end{center}
+    \par
+}{}
+
+% Title command - small caps
+\newcommand{\posttitle}[1]{%
+    \begin{center}
+    \textsc{\large #1}
+    \end{center}
+    \vspace{0.1in}
+}
+
+% Lambda item
+\newcommand{\litem}{\item[$\lambda.$]}
+
+\endinput

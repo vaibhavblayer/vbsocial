@@ -15,6 +15,10 @@ dependencies = [
     "google-api-python-client>=2.100.0",
     "google-auth-oauthlib>=1.1.0",
     "tqdm>=4.66.0",
+    "pyyaml>=6.0.0",
+    "vbagent>=0.1.0",
+    "pillow>=10.0.0",
+    "pymupdf>=1.24.0",
 ]
 
 [project.scripts]
@@ -42,6 +46,10 @@ urllib3 = ">=2.0.0"
 google-api-python-client = ">=2.100.0"
 google-auth-oauthlib = ">=1.1.0"
 tqdm = ">=4.66.0"
+pyyaml = ">=6.0.0"
+vbagent = ">=0.1.0"
+pillow = ">=10.0.0"
+pymupdf = ">=1.24.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=7.4.0"

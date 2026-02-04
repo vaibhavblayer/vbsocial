@@ -19,6 +19,13 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
         "create-post": "vbsocial.post.create:create_post",
         "post-all": "vbsocial.post.post_all:post_all",
         "stats": "vbsocial.stats.all:stats",
+        "generate": "vbsocial.generate.from_idea:generate",
+        "from-image": "vbsocial.generate.from_image:from_image",
+        "datamodel": "vbsocial.generate.datamodel_cli:datamodel",
+        "config": "vbsocial.agents.cli:config_cli",
+        "render": "vbsocial.generate.render:render_cmd",
+        "add": "vbsocial.generate.add:add_component",
+        "assemble": "vbsocial.generate.assemble:assemble",
     },
 )
 def main():

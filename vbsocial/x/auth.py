@@ -4,7 +4,7 @@ import os
 import base64
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import click
 from requests_oauthlib import OAuth2Session
@@ -49,6 +49,48 @@ def _validate_token(access_token: str) -> bool:
         return True  # Assume valid on network errors
 
 
+def _refresh_token(token: dict) -> dict | None:
+    """Refresh the access token using the refresh token.
+    
+    X OAuth 2.0 tokens expire after 2 hours but can be refreshed
+    using the refresh_token (requires offline.access scope).
+    """
+    refresh_token = token.get("refresh_token")
+    if not refresh_token:
+        return None
+    
+    client_id, client_secret = get_credentials()
+    session = get_session()
+    
+    click.echo("  Refreshing X access token...")
+    
+    try:
+        resp = session.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+            },
+            auth=HTTPBasicAuth(client_id, client_secret),
+            timeout=DEFAULT_TIMEOUT,
+        )
+        
+        if resp.status_code == 200:
+            new_token = resp.json()
+            # Add expires_at timestamp
+            new_token["expires_at"] = datetime.now().timestamp() + new_token.get("expires_in", 7200)
+            _token_manager.save(new_token)
+            click.echo("✓ X token refreshed successfully!")
+            return new_token
+        else:
+            click.echo(f"  ⚠️  Refresh failed: {resp.text}")
+            return None
+    except Exception as e:
+        click.echo(f"  ⚠️  Refresh error: {e}")
+        return None
+
+
 def create_oauth_session() -> str:
     """Create and configure OAuth 2.0 session with user context.
     
@@ -56,15 +98,45 @@ def create_oauth_session() -> str:
     """
     client_id, client_secret = get_credentials()
     
-    # Try to load existing valid token
-    token = _token_manager.get_valid_token()
+    # Try to load existing token
+    token = _token_manager.load()
     
     if token:
-        # Validate the token is still working
-        if _validate_token(token["access_token"]):
-            return token["access_token"]
+        # Check if token is expired or expiring soon (within 10 minutes)
+        if "expires_at" in token:
+            expiry = datetime.fromtimestamp(token["expires_at"])
+            refresh_threshold = expiry - timedelta(minutes=10)
+            
+            if datetime.now() > expiry:
+                click.echo("X token expired, attempting refresh...")
+                new_token = _refresh_token(token)
+                if new_token:
+                    return new_token["access_token"]
+                # If refresh fails, continue to re-auth
+            elif datetime.now() > refresh_threshold:
+                click.echo("X token expiring soon, refreshing...")
+                new_token = _refresh_token(token)
+                if new_token:
+                    return new_token["access_token"]
+                # If refresh fails, use current token
+                if _validate_token(token["access_token"]):
+                    return token["access_token"]
+            else:
+                # Token is still valid
+                if _validate_token(token["access_token"]):
+                    return token["access_token"]
+                
+                # Token validation failed, try refresh
+                click.echo("X token validation failed, attempting refresh...")
+                new_token = _refresh_token(token)
+                if new_token:
+                    return new_token["access_token"]
+        else:
+            # No expiry info, validate and use
+            if _validate_token(token["access_token"]):
+                return token["access_token"]
         
-        click.echo("Stored X token appears to be invalid. Re-authorizing...")
+        click.echo("Stored X token is invalid. Re-authorizing...")
         _token_manager.delete()
     
     # No valid token exists, get a new one
@@ -127,4 +199,18 @@ def create_oauth_session() -> str:
     _token_manager.save(token)
     
     click.echo("\n✓ X authentication successful!")
+    click.echo(f"  Token expires in {token.get('expires_in', 7200) // 60} minutes")
+    click.echo("  (Will auto-refresh using refresh_token)")
     return token["access_token"]
+
+
+def refresh_x_token() -> str | None:
+    """Manually refresh the X token. Returns new access token or None."""
+    token = _token_manager.load()
+    if not token:
+        raise click.ClickException("No X token found. Please authorize first.")
+    
+    new_token = _refresh_token(token)
+    if new_token:
+        return new_token["access_token"]
+    return None

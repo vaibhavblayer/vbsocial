@@ -1,6 +1,6 @@
 """Instagram authentication and token management."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import click
 
@@ -88,10 +88,13 @@ def get_access_token(auto_refresh: bool = True) -> str:
     token = config["access_token"]
     
     # Check if token needs refresh based on stored expiry
+    # Refresh 7 days before expiry to be safe
     if auto_refresh and "token_expiry" in config:
         expiry = datetime.fromtimestamp(config["token_expiry"])
+        refresh_threshold = expiry - timedelta(days=7)
+        
         if datetime.now() > expiry:
-            click.echo("Token expired, attempting refresh...")
+            click.echo("⚠️  Token expired!")
             try:
                 token = _refresh_token(config)
             except click.ClickException as e:
@@ -99,6 +102,12 @@ def get_access_token(auto_refresh: bool = True) -> str:
                     f"{e.message}\n"
                     "Please run 'vbsocial instagram configure' to re-authenticate."
                 )
+        elif datetime.now() > refresh_threshold:
+            click.echo("Token expiring soon, refreshing...")
+            try:
+                token = _refresh_token(config)
+            except Exception:
+                pass  # Continue with current token if refresh fails
     
     # Validate the token
     if not _validate_token(token, config):
@@ -113,13 +122,15 @@ def get_access_token(auto_refresh: bool = True) -> str:
 def _refresh_token(config: dict) -> str:
     """Refresh the access token.
     
-    For Page Access Tokens (used with Instagram Graph API), we need to
-    exchange for a new long-lived token using the app credentials.
+    For Page Access Tokens (used with Instagram Graph API):
+    1. If we have a long-lived user token, use it to get a fresh page token
+    2. Otherwise, try to exchange the current token for a long-lived one
     """
     session = get_session()
     
     app_id = config.get("app_id")
     app_secret = config.get("app_secret")
+    page_id = config.get("page_id")
     
     if not (app_id and app_secret):
         raise click.ClickException(
@@ -127,7 +138,26 @@ def _refresh_token(config: dict) -> str:
             "Please run 'vbsocial instagram configure' to set up."
         )
     
-    # For Page tokens, exchange for long-lived token
+    # Method 1: If we have a long-lived user token, get fresh page token
+    long_lived_user_token = config.get("long_lived_user_token")
+    if long_lived_user_token and page_id:
+        click.echo("  Using stored long-lived user token...")
+        page_resp = session.get(
+            f"https://graph.facebook.com/{API_VERSION}/{page_id}",
+            params={"fields": "access_token", "access_token": long_lived_user_token},
+            timeout=DEFAULT_TIMEOUT,
+        )
+        if page_resp.status_code == 200:
+            new_token = page_resp.json().get("access_token")
+            if new_token:
+                config["access_token"] = new_token
+                config["token_expiry"] = datetime.now().timestamp() + (60 * 24 * 60 * 60)
+                save_config(config)
+                click.echo("✓ Access token refreshed successfully!")
+                return new_token
+    
+    # Method 2: Exchange current token for long-lived token
+    click.echo("  Exchanging for long-lived token...")
     url = f"https://graph.facebook.com/{API_VERSION}/oauth/access_token"
     params = {
         "grant_type": "fb_exchange_token",
@@ -140,32 +170,32 @@ def _refresh_token(config: dict) -> str:
     
     if response.status_code == 200:
         data = response.json()
-        new_token = data.get("access_token")
+        new_user_token = data.get("access_token")
         
-        if new_token:
-            # Now get the page token with the new long-lived user token
-            page_id = config.get("page_id")
+        if new_user_token:
+            config["long_lived_user_token"] = new_user_token
+            
+            # Get page token with the new long-lived user token
             if page_id:
                 page_resp = session.get(
                     f"https://graph.facebook.com/{API_VERSION}/{page_id}",
-                    params={"fields": "access_token", "access_token": new_token},
+                    params={"fields": "access_token", "access_token": new_user_token},
                     timeout=DEFAULT_TIMEOUT,
                 )
                 if page_resp.status_code == 200:
                     page_data = page_resp.json()
-                    config["access_token"] = page_data.get("access_token", new_token)
+                    config["access_token"] = page_data.get("access_token", new_user_token)
                 else:
-                    config["access_token"] = new_token
+                    config["access_token"] = new_user_token
             else:
-                config["access_token"] = new_token
+                config["access_token"] = new_user_token
             
-            # Long-lived page tokens don't expire, but set 60 days as safety
             config["token_expiry"] = datetime.now().timestamp() + (60 * 24 * 60 * 60)
             save_config(config)
             click.echo("✓ Access token refreshed successfully!")
             return config["access_token"]
     
-    # If exchange fails, try the Instagram Basic Display refresh (fallback)
+    # Method 3: Try Instagram Basic Display refresh (fallback for basic display tokens)
     ig_url = "https://graph.instagram.com/refresh_access_token"
     ig_params = {
         "grant_type": "ig_refresh_token",
