@@ -15,6 +15,8 @@ from .templates import (
     create_solution_slide,
     get_code_file_extension,
     assemble_modular_document,
+    has_diagram_reference,
+    replace_item_with_lambda,
 )
 
 
@@ -37,7 +39,7 @@ def read_problem_solution(post_path: Path) -> tuple[str, str]:
 
 def update_main_tex(post_path: Path, components: list[str]) -> None:
     """Update main.tex with new components."""
-    latex_content = assemble_modular_document(components)
+    latex_content = assemble_modular_document(components, post_path=str(post_path))
     (post_path / "main.tex").write_text(latex_content)
 
 
@@ -204,6 +206,35 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
             except Exception as e:
                 click.echo(f"  ❌ Failed: {e}")
     
+    # Auto-generate diagram if problem references it but file doesn't exist
+    if not tikz and has_diagram_reference(problem) and "diagram" not in components:
+        click.echo("\n🎨 Auto-generating TikZ diagram (referenced in problem)...")
+        try:
+            import yaml
+            yaml_path = post_path / "post.yaml"
+            image_path = None
+            has_diagram = any(kw in problem.lower() for kw in ["diagram", "figure", "shown", "given", "cylindrical", "piston"])
+            
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    config = yaml.safe_load(f) or {}
+                source_images = config.get("source_images", [])
+                if source_images:
+                    image_path = source_images[0]
+            
+            tikz_code = generate_tikz(
+                problem=problem,
+                solution=solution,
+                image_path=image_path,
+                has_diagram=has_diagram,
+            )
+            if tikz_code:
+                (post_path / "diagram.tex").write_text(tikz_code)
+                components.append("diagram")
+                click.echo("  ✓ Created diagram.tex")
+        except Exception as e:
+            click.echo(f"  ⚠️  Diagram generation failed: {e}")
+    
     # Add code - just save datamodel.{ext}, no separate tex file
     if code:
         ext = get_code_file_extension(code)
@@ -250,6 +281,111 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
     
     # Render if requested
     if render:
+        click.echo("\n🖼️  Rendering...")
+        import subprocess
+        subprocess.run(
+            ["pdflatex", "-shell-escape", "-interaction=nonstopmode", "main.tex"],
+            cwd=post_path,
+            capture_output=True,
+        )
+        
+        if (post_path / "main.pdf").exists():
+            from .render import render_pdf_to_pngs
+            render_pdf_to_pngs(
+                pdf_path=post_path / "main.pdf",
+                output_dir=post_path / "images",
+                dpi=300,
+            )
+    
+    click.echo("\n✅ Done!")
+
+
+@click.command(name="fix")
+@click.argument("post_path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
+@click.option("--diagram", "-d", is_flag=True, help="Generate missing diagram.tex if referenced")
+@click.option("--lambda", "-l", "lambda_item", is_flag=True, help="Replace \\item with \\item[$\\lambda.$]")
+@click.option("--all", "-a", "fix_all", is_flag=True, help="Apply all fixes")
+@click.option("--render", "-r", is_flag=True, help="Re-render after fixing")
+def fix_post(post_path: Path, diagram: bool, lambda_item: bool, fix_all: bool, render: bool) -> None:
+    """Fix common issues in existing post files.
+    
+    Fixes:
+    - Diagram: Generate diagram.tex if problem references it
+    - Lambda: Replace \\item with \\item[$\\lambda.$]
+    
+    Example:
+        vbsocial fix --diagram
+        vbsocial fix --lambda
+        vbsocial fix --all -r
+    """
+    if not diagram and not lambda_item and not fix_all:
+        raise click.ClickException("Specify at least one: --diagram, --lambda, or --all")
+    
+    if fix_all:
+        diagram = lambda_item = True
+    
+    if not (post_path / "problem.tex").exists():
+        raise click.ClickException(f"Not a valid post directory: {post_path} (no problem.tex)")
+    
+    click.echo(f"\n🔧 Fixing post: {post_path}")
+    
+    problem, solution = read_problem_solution(post_path)
+    components = get_existing_components(post_path)
+    modified = False
+    
+    # Fix lambda item
+    if lambda_item:
+        original = problem
+        problem = replace_item_with_lambda(problem)
+        if problem != original:
+            (post_path / "problem.tex").write_text(problem)
+            click.echo("  ✓ Replaced \\item with \\item[$\\lambda.$]")
+            modified = True
+        else:
+            click.echo("  - No \\item to replace")
+    
+    # Generate missing diagram
+    if diagram and has_diagram_reference(problem) and "diagram" not in components:
+        click.echo("\n🎨 Generating missing diagram.tex...")
+        try:
+            yaml_path = post_path / "post.yaml"
+            image_path = None
+            has_diag = any(kw in problem.lower() for kw in ["diagram", "figure", "shown", "given", "cylindrical", "piston"])
+            
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    config = yaml.safe_load(f) or {}
+                source_images = config.get("source_images", [])
+                if source_images:
+                    image_path = source_images[0]
+            
+            tikz_code = generate_tikz(
+                problem=problem,
+                solution=solution,
+                image_path=image_path,
+                has_diagram=has_diag,
+            )
+            if tikz_code:
+                (post_path / "diagram.tex").write_text(tikz_code)
+                components.append("diagram")
+                click.echo("  ✓ Created diagram.tex")
+                modified = True
+        except Exception as e:
+            click.echo(f"  ❌ Diagram generation failed: {e}")
+    elif diagram:
+        if "diagram" in components:
+            click.echo("  - diagram.tex already exists")
+        elif not has_diagram_reference(problem):
+            click.echo("  - No diagram reference in problem")
+    
+    # Update main.tex if components changed
+    if modified:
+        click.echo("\n📄 Updating main.tex...")
+        update_main_tex(post_path, components)
+        update_post_yaml(post_path, components)
+    
+    # Render if requested
+    if render and modified:
         click.echo("\n🖼️  Rendering...")
         import subprocess
         subprocess.run(

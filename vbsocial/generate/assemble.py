@@ -51,7 +51,7 @@ def assemble(post_path: Path, title: str, render: bool) -> None:
     
     # Generate main.tex
     click.echo("\n📄 Generating main.tex...")
-    latex_content = assemble_modular_document(components, title=title)
+    latex_content = assemble_modular_document(components, title=title, post_path=str(post_path))
     (post_path / "main.tex").write_text(latex_content)
     
     # Update post.yaml

@@ -16,10 +16,16 @@ from .config import get_agent_config
 
 BASE_RULES = """## Rules
 1. NO main function, NO instance creation, NO tests
-2. Brief doc comments only (one line)
-3. NO verbose comments inside code
+2. Doc comments: 1-2 short lines explaining the physics concept
+3. NO special characters in comments (no subscripts, no unicode, no math symbols)
 4. Keep it minimal - avoid unnecessary abstractions
 5. Use consistent naming across languages
+
+## Comment Style
+- Plain English only, no special chars like p₀ or γ
+- Write "pressure_0" not "p₀", write "gamma" not "γ"
+- One or two short lines max per block
+- Explain what the struct/function represents
 
 ## Output
 - Raw code only
@@ -61,9 +67,10 @@ C_PROMPT = f"""You are a C developer. Generate a concise data model for physics 
 {BASE_RULES}
 
 ## C Specific
-- ONLY struct, typedef, function declarations
+- ONLY struct, typedef, function definitions
 - Use double for quantities
 - Use struct for vectors
+- Include function implementations (not just declarations)
 """
 
 ZIG_PROMPT = f"""You are a Zig developer. Generate a concise data model for physics problems.

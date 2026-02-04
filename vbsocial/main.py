@@ -25,6 +25,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
         "config": "vbsocial.agents.cli:config_cli",
         "render": "vbsocial.generate.render:render_cmd",
         "add": "vbsocial.generate.add:add_component",
+        "fix": "vbsocial.generate.add:fix_post",
         "assemble": "vbsocial.generate.assemble:assemble",
     },
 )

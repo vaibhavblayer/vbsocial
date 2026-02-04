@@ -13,6 +13,7 @@ from vbagent.agents.alternate import generate_alternate
 
 from ..agents.caption import generate_captions
 from ..agents.datamodel import generate_datamodel
+from ..agents.tikz import generate_tikz
 from ..post.create import get_posts_dir
 from .templates import (
     assemble_modular_document,
@@ -20,6 +21,7 @@ from .templates import (
     create_idea_slide,
     get_code_file_extension,
     replace_item_with_lambda,
+    has_diagram_reference,
 )
 
 
@@ -186,6 +188,25 @@ def create_post_from_image(
     (post_path / "problem.tex").write_text(problem_content)
     components.append("problem")
     
+    # Check if problem references a diagram and generate it
+    if has_diagram_reference(problem_content):
+        click.echo("🎨 Generating TikZ diagram (referenced in problem)...")
+        try:
+            # Check if source image has a diagram
+            has_diagram = any(kw in problem.lower() for kw in ["diagram", "figure", "shown", "given", "cylindrical", "piston"])
+            tikz_code = generate_tikz(
+                problem=problem,
+                solution=solution,
+                image_path=image_paths[0] if image_paths else None,
+                has_diagram=has_diagram,
+            )
+            if tikz_code:
+                (post_path / "diagram.tex").write_text(tikz_code)
+                components.append("diagram")
+                click.echo("  ✓ Created diagram.tex")
+        except Exception as e:
+            click.echo(f"  ⚠️  Diagram generation failed: {e}")
+    
     # Save solution.tex - raw solution env content
     if solution:
         click.echo("✅ Creating solution.tex...")
@@ -242,7 +263,7 @@ def create_post_from_image(
     
     # Assemble main.tex with \input statements
     click.echo("📄 Assembling main.tex...")
-    latex_content = assemble_modular_document(components)
+    latex_content = assemble_modular_document(components, post_path=str(post_path))
     (post_path / "main.tex").write_text(latex_content)
     
     # Generate captions
