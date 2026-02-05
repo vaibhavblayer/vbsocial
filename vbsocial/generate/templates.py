@@ -39,7 +39,7 @@ MAIN_TEMPLATE_MODULAR = r"""\documentclass{{article}}
 \posttitle{{{title}}}
 
 \begin{{enumerate}}
-{enum_inputs}
+	{enum_inputs}
 \end{{enumerate}}
 
 {code_section}
@@ -347,8 +347,6 @@ def create_all_code_tex(post_path: str, code_langs: list[str], max_lines_per_pag
             emit_page(page_blocks, show_title=is_first_page, is_continuation=not is_first_page)
     
     return "\n".join(tex_parts)
-    
-    return "\n".join(tex_parts)
 
 
 def create_question_slide(question: str, diagram: str = "") -> str:
@@ -386,10 +384,11 @@ def assemble_modular_document(components: list[str], title: str = "PHYSICS", pos
     r"""Assemble document using \input for component files.
     
     Structure:
-    - problem, idea, solution, alternate go inside \begin{enumerate}
+    - problem, idea, solution, alternate go inside enumerate
+    - diagram is appended to problem.tex (not separate input)
     - all code languages go into a single code.tex with smart page breaks
     
-    Order: problem -> diagram -> idea -> solution -> alternate -> code
+    Order: problem -> idea -> solution -> alternate -> code
     
     Args:
         components: List of component names (e.g., ['problem', 'solution', 'idea', 'rust'])
@@ -399,24 +398,39 @@ def assemble_modular_document(components: list[str], title: str = "PHYSICS", pos
     from pathlib import Path
     
     # Define the correct order
-    ORDER = ["problem", "diagram", "idea", "solution", "alternate"]
+    ORDER = ["problem", "idea", "solution", "alternate"]
     
     enum_parts = []
     code_langs = []
+    has_diagram = "diagram" in components
     
     for comp in components:
         if comp in ("rust", "python", "swift", "c", "zig", "go", "cpp"):
             code_langs.append(comp)
         elif comp.startswith("code_"):
             code_langs.append(comp.replace("code_", ""))
+        elif comp == "diagram":
+            # Skip diagram - will be appended to problem.tex
+            pass
         else:
             enum_parts.append(comp)
     
     # Sort enum_parts by ORDER
     enum_parts_sorted = sorted(enum_parts, key=lambda x: ORDER.index(x) if x in ORDER else 99)
     
+    # If diagram exists, append it to problem.tex
+    if has_diagram and post_path:
+        problem_file = Path(post_path) / "problem.tex"
+        diagram_file = Path(post_path) / "diagram.tex"
+        if problem_file.exists() and diagram_file.exists():
+            problem_content = problem_file.read_text()
+            # Only append if not already there
+            if r"\begin{center}" not in problem_content or r"\input{diagram}" not in problem_content:
+                diagram_block = "\n\\begin{center}\n\t\\input{diagram}\n\\end{center}"
+                problem_file.write_text(problem_content.rstrip() + diagram_block + "\n")
+    
     # Build enum inputs
-    enum_inputs = "\n".join(f"\\input{{{comp}}}" for comp in enum_parts_sorted)
+    enum_inputs = "\n\t".join(f"\\input{{{comp}}}" for comp in enum_parts_sorted)
     
     # Build code section
     code_section = ""

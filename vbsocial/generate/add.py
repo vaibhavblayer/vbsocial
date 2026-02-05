@@ -5,11 +5,9 @@ from pathlib import Path
 import click
 import yaml
 
-from vbagent.agents.idea import generate_idea_latex
-from vbagent.agents.alternate import generate_alternate
-
 from ..agents.datamodel import generate_datamodel
 from ..agents.tikz import generate_tikz
+from ..agents.debug import debug_enabled, log_debug
 from .templates import (
     create_idea_slide,
     create_solution_slide,
@@ -89,7 +87,8 @@ def get_existing_components(post_path: Path) -> list[str]:
 @click.option("--tikz", "-t", is_flag=True, help="Add/generate TikZ diagram")
 @click.option("--render", "-r", is_flag=True, help="Re-render after adding")
 @click.option("--force", "-f", is_flag=True, help="Overwrite existing components")
-def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None, tikz: bool, render: bool, force: bool) -> None:
+@click.option("--debug", "-d", is_flag=True, help="Enable debug output")
+def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None, tikz: bool, render: bool, force: bool, debug: bool) -> None:
     """Add components to an existing post directory.
     
     Run from within a post directory or provide the path.
@@ -103,7 +102,16 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
         vbsocial add --tikz
         vbsocial add -i -a -c rust -t -r
         vbsocial add --code rust --force  # regenerate existing
+        vbsocial add -c rust -d  # debug mode
     """
+    import os
+    
+    # Enable debug mode if flag is set
+    if debug:
+        os.environ["VBSOCIAL_DEBUG"] = "1"
+        from ..agents.debug import reset_debug_cache
+        reset_debug_cache()
+    
     if not idea and not alternate and not code and not tikz:
         raise click.ClickException("Specify at least one: --idea, --alternate, --code, or --tikz")
     
@@ -112,6 +120,15 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
         raise click.ClickException(f"Not a valid post directory: {post_path} (no problem.tex)")
     
     click.echo(f"\n📁 Post directory: {post_path}")
+    
+    if debug_enabled():
+        log_debug("add_start", {
+            "post_path": str(post_path),
+            "idea": idea,
+            "alternate": alternate,
+            "code": code,
+            "tikz": tikz,
+        })
     
     # Read existing content
     problem, solution = read_problem_solution(post_path)
@@ -132,6 +149,7 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
         else:
             click.echo("\n💡 Generating key idea...")
             try:
+                from vbagent.agents.idea import generate_idea_latex
                 # Combine problem and solution for idea extraction
                 full_content = problem + "\n\n" + solution
                 idea_latex = generate_idea_latex(full_content)
@@ -155,6 +173,7 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
         else:
             click.echo("\n🔄 Generating alternate solution...")
             try:
+                from vbagent.agents.alternate import generate_alternate
                 alt = generate_alternate(problem, solution)
                 if alt:
                     alt_slide = create_solution_slide(alt)
@@ -304,25 +323,28 @@ def add_component(post_path: Path, idea: bool, alternate: bool, code: str | None
 @click.argument("post_path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
 @click.option("--diagram", "-d", is_flag=True, help="Generate missing diagram.tex if referenced")
 @click.option("--lambda", "-l", "lambda_item", is_flag=True, help="Replace \\item with \\item[$\\lambda.$]")
+@click.option("--caption", "-c", is_flag=True, help="Generate captions for all platforms")
 @click.option("--all", "-a", "fix_all", is_flag=True, help="Apply all fixes")
 @click.option("--render", "-r", is_flag=True, help="Re-render after fixing")
-def fix_post(post_path: Path, diagram: bool, lambda_item: bool, fix_all: bool, render: bool) -> None:
+def fix_post(post_path: Path, diagram: bool, lambda_item: bool, caption: bool, fix_all: bool, render: bool) -> None:
     """Fix common issues in existing post files.
     
     Fixes:
     - Diagram: Generate diagram.tex if problem references it
     - Lambda: Replace \\item with \\item[$\\lambda.$]
+    - Caption: Generate storytelling captions for all platforms
     
     Example:
         vbsocial fix --diagram
         vbsocial fix --lambda
+        vbsocial fix --caption
         vbsocial fix --all -r
     """
-    if not diagram and not lambda_item and not fix_all:
-        raise click.ClickException("Specify at least one: --diagram, --lambda, or --all")
+    if not diagram and not lambda_item and not caption and not fix_all:
+        raise click.ClickException("Specify at least one: --diagram, --lambda, --caption, or --all")
     
     if fix_all:
-        diagram = lambda_item = True
+        diagram = lambda_item = caption = True
     
     if not (post_path / "problem.tex").exists():
         raise click.ClickException(f"Not a valid post directory: {post_path} (no problem.tex)")
@@ -377,6 +399,51 @@ def fix_post(post_path: Path, diagram: bool, lambda_item: bool, fix_all: bool, r
             click.echo("  - diagram.tex already exists")
         elif not has_diagram_reference(problem):
             click.echo("  - No diagram reference in problem")
+    
+    # Generate captions
+    if caption:
+        click.echo("\n📝 Generating captions...")
+        try:
+            from ..agents.caption import generate_captions_from_post, CHAR_LIMITS
+            
+            captions = generate_captions_from_post(str(post_path))
+            
+            # Save to post.yaml for post-all command
+            yaml_path = post_path / "post.yaml"
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    post_config = yaml.safe_load(f) or {}
+            else:
+                post_config = {}
+            
+            # Add captions to post.yaml
+            post_config["captions"] = captions
+            
+            # Custom representer for literal block style (cleaner multiline)
+            def str_representer(dumper, data):
+                if '\n' in data:
+                    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+                return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+            
+            yaml.add_representer(str, str_representer)
+            
+            with open(yaml_path, "w") as f:
+                yaml.dump(post_config, f, default_flow_style=False, allow_unicode=True, width=120)
+            
+            click.echo("  ✓ Saved captions to post.yaml")
+            
+            # Show preview
+            click.echo("\n  📱 Caption previews:")
+            for platform, text in captions.items():
+                limit = CHAR_LIMITS.get(platform, 1000)
+                length = len(text)
+                status = "✓" if length <= limit else "⚠️"
+                preview = text[:60].replace("\n", " ") + "..." if len(text) > 60 else text.replace("\n", " ")
+                click.echo(f"    {status} {platform}: ({length}/{limit}) {preview}")
+            
+            modified = True
+        except Exception as e:
+            click.echo(f"  ❌ Caption generation failed: {e}")
     
     # Update main.tex if components changed
     if modified:

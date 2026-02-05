@@ -7,9 +7,6 @@ from pathlib import Path
 import click
 import yaml
 
-from ..agents.caption import generate_captions
-from ..agents.content_planner import plan_content, ContentPlan
-from ..agents.datamodel import generate_datamodel
 from ..post.create import get_posts_dir
 from .templates import (
     assemble_modular_document,
@@ -57,11 +54,11 @@ SLIDE_TEMPLATE = r"""% Slide {num}: {title}
 """
 
 
-def content_plan_to_latex(plan: ContentPlan, code_slide: str | None = None) -> str:
+def content_plan_to_latex(plan, code_slide: str | None = None) -> str:
     """Convert a content plan to LaTeX slides.
     
     Args:
-        plan: The content plan with slides
+        plan: The content plan with slides (ContentPlan from content_planner)
         code_slide: Optional code slide LaTeX to append
     """
     slides_latex = []
@@ -235,6 +232,7 @@ def generate(idea: str, slides: int | None, render: bool, name: str | None, code
     # Step 1: Plan content
     click.echo("\n📝 Planning content structure...")
     try:
+        from ..agents.content_planner import plan_content
         plan = plan_content(idea, num_slides=slides, include_code=bool(code))
         click.echo(f"  ✓ Planned {len(plan.slides)} slides")
         click.echo(f"  Topic: {plan.topic}")
@@ -245,6 +243,7 @@ def generate(idea: str, slides: int | None, render: bool, name: str | None, code
     # Step 2: Generate captions
     click.echo("\n✍️  Generating captions...")
     try:
+        from ..agents.caption import generate_captions
         content_summary = "\n".join([f"- {s.title}: {s.content[:100]}..." for s in plan.slides])
         captions_output = generate_captions(
             topic=plan.topic,
@@ -267,6 +266,7 @@ def generate(idea: str, slides: int | None, render: bool, name: str | None, code
     if code:
         click.echo(f"\n💻 Generating {code} data model...")
         try:
+            from ..agents.datamodel import generate_datamodel
             datamodel_code = generate_datamodel(idea, code)
             if datamodel_code:
                 code_slide_file = (code, datamodel_code)

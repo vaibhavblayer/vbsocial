@@ -167,8 +167,14 @@ class LinkedInPost:
         return image_urn
     
     @with_retry(max_attempts=2, delay=2.0)
-    def create_multiimage_post(self, message: str, image_paths: list[str]) -> dict:
-        """Create a post with multiple images (2-20 images) using Posts API."""
+    def create_multiimage_post(self, message: str, image_paths: list[str], alt_texts: list[str] | None = None) -> dict:
+        """Create a post with multiple images (2-20 images) using Posts API.
+        
+        Args:
+            message: Post caption/commentary
+            image_paths: List of image file paths (2-20 images)
+            alt_texts: Optional list of alt text descriptions for each image
+        """
         if len(image_paths) < 2:
             raise click.ClickException("MultiImage posts require at least 2 images")
         if len(image_paths) > 20:
@@ -180,6 +186,14 @@ class LinkedInPost:
             click.echo(f"  Uploading image {idx}/{len(image_paths)}...")
             image_urn = self._upload_image_for_posts_api(path)
             image_urns.append(image_urn)
+        
+        # Build images array with optional altText
+        images = []
+        for idx, urn in enumerate(image_urns):
+            img_data = {"id": urn}
+            if alt_texts and idx < len(alt_texts) and alt_texts[idx]:
+                img_data["altText"] = alt_texts[idx]
+            images.append(img_data)
         
         # Create post with multiImage content
         click.echo("  Creating multi-image post...")
@@ -196,7 +210,7 @@ class LinkedInPost:
             "isReshareDisabledByAuthor": False,
             "content": {
                 "multiImage": {
-                    "images": [{"id": urn} for urn in image_urns]
+                    "images": images
                 }
             }
         }
@@ -274,16 +288,21 @@ class LinkedInPost:
         return self._create_ugc_post(post_data)
     
     @with_retry(max_attempts=2, delay=2.0)
-    def create_post_with_images(self, message: str, image_paths: list[str]) -> dict:
+    def create_post_with_images(self, message: str, image_paths: list[str], alt_texts: list[str] | None = None) -> dict:
         """Create a post with one or more images.
         
         For single image, uses the standard UGC API.
         For multiple images (2-20), uses the Posts API with MultiImage.
+        
+        Args:
+            message: Post caption/commentary
+            image_paths: List of image file paths
+            alt_texts: Optional list of alt text descriptions for each image
         """
         if len(image_paths) == 1:
             return self.create_post_with_image(message, image_paths[0])
         else:
-            return self.create_multiimage_post(message, image_paths)
+            return self.create_multiimage_post(message, image_paths, alt_texts)
     
     @with_retry(max_attempts=2, delay=2.0)
     def create_post_with_video(self, message: str, video_path: str) -> dict:

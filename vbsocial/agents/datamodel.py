@@ -4,10 +4,8 @@ Generates code representations of physics problems in various languages.
 Teaches students how to model physics concepts in programming.
 """
 
-from vbagent.agents.base import create_agent, run_agent_sync
-from agents.model_settings import ModelSettings, Reasoning
-
 from .config import get_agent_config
+from .debug import debug_agent, debug_transform, log_agent_call, log_agent_result
 
 
 # ============================================================================
@@ -146,6 +144,7 @@ LANGUAGE_CONFIG = {
 # AGENT FUNCTIONS
 # ============================================================================
 
+@debug_transform
 def clean_code_output(result: str, language: str) -> str:
     """Clean up markdown code blocks from output."""
     block = LANGUAGE_CONFIG.get(language, {}).get("block", language)
@@ -179,6 +178,10 @@ def generate_datamodel(
     Returns:
         Generated code as a string
     """
+    import time
+    from vbagent.agents.base import create_agent, run_agent_sync
+    from agents.model_settings import ModelSettings, Reasoning
+    
     if language not in LANGUAGE_CONFIG:
         raise ValueError(f"Unsupported language: {language}. Use: {list(LANGUAGE_CONFIG.keys())}")
     
@@ -210,7 +213,22 @@ def generate_datamodel(
             solution=solution or "(no solution provided)",
         )
     
+    # Log agent call
+    log_agent_call(
+        f"{language.title()}DataModelAgent",
+        input_text,
+        model=model or config["model"],
+        reasoning=config["reasoning"],
+        has_reference=bool(reference_code),
+    )
+    
+    start = time.time()
     result = run_agent_sync(agent, input_text)
+    duration_ms = (time.time() - start) * 1000
+    
+    # Log raw result
+    log_agent_result(f"{language.title()}DataModelAgent", result, duration_ms)
+    
     return clean_code_output(result, language)
 
 

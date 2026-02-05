@@ -180,24 +180,33 @@ def configure() -> None:
     
     if exchange_resp.status_code == 200:
         long_lived_user_token = exchange_resp.json().get("access_token")
-        
-        # Now get the page token with the long-lived user token
-        # Page tokens derived from long-lived user tokens are also long-lived
-        page_token_resp = session.get(
-            f"https://graph.facebook.com/{API_VERSION}/{page['id']}",
-            params={"fields": "access_token", "access_token": long_lived_user_token},
-            timeout=DEFAULT_TIMEOUT,
-        )
-        
-        if page_token_resp.status_code == 200:
-            long_lived_page_token = page_token_resp.json().get("access_token")
-            config["access_token"] = long_lived_page_token
+        if long_lived_user_token:
             config["long_lived_user_token"] = long_lived_user_token
-            click.echo("✓ Long-lived token obtained!")
-        else:
-            click.echo("⚠️  Could not get long-lived page token, using original")
+            click.echo("✓ Got long-lived user token!")
+            
+            # Now get the page token with the long-lived user token
+            # Page tokens derived from long-lived user tokens are also long-lived (never expire)
+            page_token_resp = session.get(
+                f"https://graph.facebook.com/{API_VERSION}/{page['id']}",
+                params={"fields": "access_token", "access_token": long_lived_user_token},
+                timeout=DEFAULT_TIMEOUT,
+            )
+            
+            if page_token_resp.status_code == 200:
+                long_lived_page_token = page_token_resp.json().get("access_token")
+                if long_lived_page_token:
+                    config["access_token"] = long_lived_page_token
+                    click.echo("✓ Got long-lived page token!")
     else:
-        click.echo("⚠️  Could not exchange for long-lived token, using original")
+        # Exchange failed - this can happen due to Facebook API issues
+        # Fall back to using the page token directly (it's already long-lived)
+        try:
+            error = exchange_resp.json().get("error", {}).get("message", exchange_resp.text)
+        except Exception:
+            error = exchange_resp.text
+        click.echo(f"⚠️  Token exchange failed: {error}")
+        click.echo("   Using page token directly (should still work for ~60 days)")
+        # The page_access_token we got earlier is already set in config["access_token"]
     
     # Set expiry - long-lived page tokens don't expire if derived from long-lived user token
     # But we set 60 days as a safety check

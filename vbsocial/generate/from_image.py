@@ -7,13 +7,6 @@ from pathlib import Path
 import click
 import yaml
 
-from vbagent.agents.scanner import scan_with_type, ScanResult
-from vbagent.agents.idea import generate_idea_latex
-from vbagent.agents.alternate import generate_alternate
-
-from ..agents.caption import generate_captions
-from ..agents.datamodel import generate_datamodel
-from ..agents.tikz import generate_tikz
 from ..post.create import get_posts_dir
 from .templates import (
     assemble_modular_document,
@@ -25,24 +18,26 @@ from .templates import (
 )
 
 
-def run_vbagent_scan(image_path: str, question_type: str | None = None) -> ScanResult:
+def run_vbagent_scan(image_path: str, question_type: str | None = None):
     """Run vbagent scan to extract LaTeX from image.
     
     Args:
         image_path: Path to image
         question_type: Question type (subjective, mcq_sc, etc.) - defaults to subjective
     """
+    from vbagent.agents.scanner import scan_with_type
     qtype = question_type or "subjective"
     return scan_with_type(image_path, qtype)
 
 
-def run_vbagent_scan_multiple(image_paths: list[str], question_type: str | None = None) -> list[ScanResult]:
+def run_vbagent_scan_multiple(image_paths: list[str], question_type: str | None = None) -> list:
     """Run vbagent scan on multiple images.
     
     Args:
         image_paths: List of image paths
         question_type: Question type (defaults to subjective)
     """
+    from vbagent.agents.scanner import scan_with_type
     results = []
     qtype = question_type or "subjective"
     
@@ -67,6 +62,7 @@ def run_vbagent_idea(full_content: str) -> str | None:
         full_content: Combined problem + solution LaTeX
     """
     try:
+        from vbagent.agents.idea import generate_idea_latex
         return generate_idea_latex(full_content)
     except Exception as e:
         click.echo(f"  ⚠️  Idea extraction failed: {e}")
@@ -76,17 +72,18 @@ def run_vbagent_idea(full_content: str) -> str | None:
 def run_vbagent_alternate(problem: str, solution: str) -> str | None:
     """Run vbagent alternate to get alternative solution."""
     try:
+        from vbagent.agents.alternate import generate_alternate
         return generate_alternate(problem, solution)
     except Exception as e:
         click.echo(f"  ⚠️  Alternate generation failed: {e}")
     return None
 
 
-def parse_scan_results(results: list[ScanResult]) -> tuple[str, str]:
+def parse_scan_results(results: list) -> tuple[str, str]:
     r"""Parse scan results into problem and solution parts.
     
     Args:
-        results: List of ScanResult objects
+        results: List of ScanResult objects from vbagent
         
     Returns:
         (problem_latex, solution_latex) tuple
@@ -192,6 +189,7 @@ def create_post_from_image(
     if has_diagram_reference(problem_content):
         click.echo("🎨 Generating TikZ diagram (referenced in problem)...")
         try:
+            from ..agents.tikz import generate_tikz
             # Check if source image has a diagram
             has_diagram = any(kw in problem.lower() for kw in ["diagram", "figure", "shown", "given", "cylindrical", "piston"])
             tikz_code = generate_tikz(
@@ -248,6 +246,7 @@ def create_post_from_image(
     if include_code:
         click.echo(f"💻 Generating {include_code} data model...")
         try:
+            from ..agents.datamodel import generate_datamodel
             code = generate_datamodel(
                 problem=problem,
                 language=include_code,
@@ -268,6 +267,7 @@ def create_post_from_image(
     
     # Generate captions
     click.echo("✍️  Generating captions...")
+    from ..agents.caption import generate_captions
     topic = problem[:50] + "..." if len(problem) > 50 else problem
     captions_output = generate_captions(topic=topic, difficulty="intermediate")
     captions = {

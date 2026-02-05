@@ -7,11 +7,8 @@ Uses vbagent's tikz agent to:
 
 from pathlib import Path
 
-from vbagent.agents.tikz import generate_tikz as vbagent_generate_tikz
-from vbagent.agents.base import create_agent, run_agent_sync
-from agents.model_settings import ModelSettings, Reasoning
-
 from .config import get_agent_config
+from .debug import log_agent_call, log_agent_result, debug_transform
 
 
 ILLUSTRATE_PROMPT = """You are a physics diagram specialist. Create a simple, clear TikZ diagram to illustrate a physics concept.
@@ -60,12 +57,22 @@ def generate_tikz_from_image(image_path: str, description: str = "") -> str:
     Returns:
         TikZ code string
     """
-    return vbagent_generate_tikz(
+    import time
+    from vbagent.agents.tikz import generate_tikz as vbagent_generate_tikz
+    
+    log_agent_call("TikZFromImage", description, image_path=image_path)
+    
+    start = time.time()
+    result = vbagent_generate_tikz(
         description=description or "Reproduce this physics diagram exactly",
         image_path=image_path,
         search_references=True,
         use_context=True,
     )
+    duration_ms = (time.time() - start) * 1000
+    
+    log_agent_result("TikZFromImage", result, duration_ms)
+    return result
 
 
 def generate_tikz_illustration(problem: str, solution: str = "") -> str:
@@ -80,6 +87,10 @@ def generate_tikz_illustration(problem: str, solution: str = "") -> str:
     Returns:
         TikZ code string
     """
+    import time
+    from vbagent.agents.base import create_agent, run_agent_sync
+    from agents.model_settings import ModelSettings, Reasoning
+    
     config = get_agent_config("datamodel")  # Use same config as datamodel
     
     settings = ModelSettings(reasoning=Reasoning(effort=config["reasoning"]))
@@ -96,7 +107,13 @@ def generate_tikz_illustration(problem: str, solution: str = "") -> str:
         solution=solution or "(no solution provided)",
     )
     
+    log_agent_call("TikZIllustrator", input_text, model=config["model"])
+    
+    start = time.time()
     result = run_agent_sync(agent, input_text)
+    duration_ms = (time.time() - start) * 1000
+    
+    log_agent_result("TikZIllustrator", result, duration_ms)
     
     # Clean up markdown if present
     if "```tikz" in result:
