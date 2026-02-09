@@ -25,9 +25,11 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
         "datamodel": "vbsocial.generate.datamodel_cli:datamodel",
         "config": "vbsocial.agents.cli:config_cli",
         "render": "vbsocial.generate.render:render_cmd",
+        "gen-bg": "vbsocial.generate.bg_gen:gen_bg_cmd",
         "add": "vbsocial.generate.add:add_component",
         "fix": "vbsocial.generate.add:fix_post",
         "assemble": "vbsocial.generate.assemble:assemble",
+        "track": "vbsocial.tracker.cli:track_cli",
     },
 )
 def main():

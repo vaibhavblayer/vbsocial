@@ -16,6 +16,7 @@
 \RequirePackage{tikz}
 \RequirePackage{pgfplots}
 \pgfplotsset{compat=1.18}
+\RequirePackage{tzplot}
 
 % Code highlighting
 \RequirePackage{minted}
@@ -29,20 +30,19 @@
 % Multiple choice options
 \RequirePackage{tasks}
 
-% Colors
-\definecolor{bg}{HTML}{282C34}
-\definecolor{accent}{HTML}{61AFEF}
-\definecolor{codetitle}{HTML}{E5C07B}
-
-% Minted settings - one-dark theme
+% Minted settings - theme will be set via \codetheme command
+% No bgcolor - let theme handle all colors
 \setminted{
-    style=one-dark,
-    bgcolor=bg,
     fontsize=\small,
     breaklines,
     breakanywhere,
     autogobble,
     frame=none
+}
+
+% Command to set code theme (called from document)
+\newcommand{\codetheme}[1]{%
+    \setminted{style=#1}%
 }
 
 % Custom environments with pagebreak and centered small caps title
@@ -74,5 +74,9 @@
 
 % Lambda item
 \newcommand{\litem}{\item[$\lambda.$]}
+
+
+
+\def\ans{\textcolor{red!95}{\textit{~~Ans.}}}
 
 \endinput

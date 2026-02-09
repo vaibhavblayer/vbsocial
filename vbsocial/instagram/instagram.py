@@ -14,6 +14,7 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
         "post": "vbsocial.instagram.post:post",
         "configure": "vbsocial.instagram.commands.configure:configure",
         "refresh": "vbsocial.instagram.commands.refresh:refresh",
+        "token-info": "vbsocial.instagram.commands.refresh:token_info",
     },
 )
 def instagram():

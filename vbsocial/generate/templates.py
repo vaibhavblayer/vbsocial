@@ -8,6 +8,7 @@ MAIN_TEMPLATE = r"""\documentclass[border=0pt]{{standalone}}
 \usepackage{{tikz}}
 \usepackage{{minted}}
 \usepackage{{tcolorbox}}
+\usepackage{{tzplot}}
 \tcbuselibrary{{minted, skins}}
 
 % Colors
@@ -34,7 +35,16 @@ MAIN_TEMPLATE = r"""\documentclass[border=0pt]{{standalone}}
 MAIN_TEMPLATE_MODULAR = r"""\documentclass{{article}}
 \usepackage{{post}}
 
+% Set code theme
+\codetheme{{{code_theme}}}
+
+% Define foreground color
+\definecolor{{fgcolor}}{{HTML}}{{{fg_color}}}
+
 \begin{{document}}
+
+% Set foreground color
+\color{{fgcolor}}
 
 \posttitle{{{title}}}
 
@@ -307,11 +317,10 @@ def create_all_code_tex(post_path: str, code_langs: list[str], max_lines_per_pag
             nonlocal tex_parts
             
             tex_parts.append(r"\pagebreak")
-            tex_parts.append(r"{\pagecolor{bg}")
             
             # Title at TOP (outside vfill)
             title_suffix = " (cont.)" if is_continuation else ""
-            tex_parts.append(r"\begin{center}\textsc{\color{codetitle}Data Model: " + lang.title() + title_suffix + r"}\end{center}")
+            tex_parts.append(r"\begin{center}\textsc{Data Model: " + lang.title() + title_suffix + r"}\end{center}")
             
             tex_parts.append(r"\vspace*{\fill}")  # Top fill for centering code
             
@@ -324,7 +333,6 @@ def create_all_code_tex(post_path: str, code_langs: list[str], max_lines_per_pag
                 tex_parts.append(r"}")
             
             tex_parts.append(r"\vspace*{\fill}")  # Bottom fill for centering
-            tex_parts.append(r"}")
             tex_parts.append("")
         
         for block in blocks:
@@ -380,7 +388,7 @@ def assemble_document(slides: list[str]) -> str:
     return MAIN_TEMPLATE.format(content=content)
 
 
-def assemble_modular_document(components: list[str], title: str = "PHYSICS", post_path: str | None = None) -> str:
+def assemble_modular_document(components: list[str], title: str = "PHYSICS", post_path: str | None = None, code_theme: str = "xcode", fg_color: str = "B62F54") -> str:
     r"""Assemble document using \input for component files.
     
     Structure:
@@ -447,13 +455,13 @@ def assemble_modular_document(components: list[str], title: str = "PHYSICS", pos
         for lang in code_langs:
             ext = get_code_file_extension(lang)
             code_lines.append(r"\pagebreak")
-            code_lines.append(r"{\pagecolor{bg}")
-            code_lines.append(r"\begin{center}\textsc{\color{codetitle}Data Model: " + lang.title() + r"}\end{center}")
+            code_lines.append(r"\begin{center}\textsc{Data Model: " + lang.title() + r"}\end{center}")
             code_lines.append(f"\\inputminted{{{lang}}}{{datamodel.{ext}}}")
-            code_lines.append(r"}")
         code_section = "\n".join(code_lines)
     
     return MAIN_TEMPLATE_MODULAR.format(
+        code_theme=code_theme,
+        fg_color=fg_color,
         title=title,
         enum_inputs=enum_inputs,
         code_section=code_section,

@@ -153,17 +153,42 @@ def post_carousel(photo_paths: list[str], caption: str | None) -> dict:
     if not parent_creation_id:
         raise click.ClickException("Did not receive creation_id for carousel parent")
     
-    # Publish
+    # Publish with retry and better error handling
     click.echo("Publishing carousel…")
-    publish_resp = session.post(
-        f"https://graph.facebook.com/{API_VERSION}/{instagram_account_id}/media_publish",
-        data={"access_token": access_token, "creation_id": parent_creation_id},
-        timeout=DEFAULT_TIMEOUT,
-    )
-    publish_resp.raise_for_status()
     
-    click.echo("Carousel posted successfully!")
-    return publish_resp.json()
+    import time
+    max_publish_attempts = 3
+    for attempt in range(max_publish_attempts):
+        publish_resp = session.post(
+            f"https://graph.facebook.com/{API_VERSION}/{instagram_account_id}/media_publish",
+            data={"access_token": access_token, "creation_id": parent_creation_id},
+            timeout=DEFAULT_TIMEOUT,
+        )
+        
+        if publish_resp.status_code == 200:
+            click.echo("Carousel posted successfully!")
+            return publish_resp.json()
+        
+        # Parse error
+        try:
+            error_data = publish_resp.json().get("error", {})
+            error_code = error_data.get("code")
+            error_msg = error_data.get("message", publish_resp.text)
+        except Exception:
+            error_code = None
+            error_msg = publish_resp.text
+        
+        # Error 9007 = media not ready yet, retry after delay
+        if error_code == 9007 or "not ready" in error_msg.lower():
+            if attempt < max_publish_attempts - 1:
+                click.echo(f"  Media not ready, waiting 10s... (attempt {attempt + 1}/{max_publish_attempts})")
+                time.sleep(10)
+                continue
+        
+        # Other errors - fail immediately
+        raise click.ClickException(f"Failed to publish carousel: {error_msg}")
+    
+    raise click.ClickException("Failed to publish carousel after retries")
 
 
 @click.command()

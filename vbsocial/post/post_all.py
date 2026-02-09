@@ -56,14 +56,20 @@ def post_to_facebook(images: list[Path], caption: str) -> str | None:
 def post_to_instagram(images: list[Path], caption: str) -> str | None:
     """Post to Instagram. Returns media ID."""
     click.echo("\n📸 Posting to Instagram...")
-    if len(images) == 1:
-        result = ig_post_photo(str(images[0]), caption)
-    else:
-        result = ig_post_carousel([str(img) for img in images], caption)
-    # Extract media ID
-    if isinstance(result, dict):
-        return result.get("id")
-    return None
+    try:
+        if len(images) == 1:
+            result = ig_post_photo(str(images[0]), caption)
+        else:
+            result = ig_post_carousel([str(img) for img in images], caption)
+        # Extract media ID
+        if isinstance(result, dict):
+            return result.get("id")
+        return None
+    except click.ClickException:
+        raise
+    except Exception as e:
+        # Re-raise with more context
+        raise click.ClickException(f"Instagram posting failed: {e}")
 
 
 def post_to_linkedin(images: list[Path], caption: str) -> str | None:

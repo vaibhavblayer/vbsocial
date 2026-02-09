@@ -11,6 +11,30 @@ from .add import get_existing_components, update_post_yaml
 from ..agents.debug import debug_enabled, log_debug
 
 
+def resolve_color(color: str) -> str:
+    """Resolve color name or hex to hex value.
+    
+    Args:
+        color: Color name (maroon, black, etc.) or hex (#B62F54)
+        
+    Returns:
+        Hex color without # (e.g., "B62F54")
+    """
+    if color.startswith("#"):
+        return color.lstrip("#")
+    
+    # Named colors
+    color_map = {
+        "maroon": "B62F54",
+        "black": "000000",
+        "white": "FFFFFF",
+        "skin": "FCEDDB",
+        "matteblack": "1a1a1a",
+    }
+    
+    return color_map.get(color.lower(), "B62F54")  # Default to maroon
+
+
 def copy_post_sty(post_path: Path) -> None:
     """Copy post.sty to the post directory if not present."""
     sty_dest = post_path / "post.sty"
@@ -52,22 +76,35 @@ def log_file_output(filename: str, content: str) -> None:
 
 @click.command(name="assemble")
 @click.argument("post_path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--title", "-t", default="PHYSICS", help="Title for the post")
+@click.option("--title", "-t", default="Physics", help="Title for the post")
+@click.option("--code-theme", "-c", default="xcode", help="Code theme (name or number, default: xcode)")
+@click.option("--fg-color", "--fg", default="maroon", help="Foreground text color (hex or name, default: maroon)")
+@click.option("--list-themes", is_flag=True, help="List all available code themes")
 @click.option("--render", "-r", is_flag=True, help="Render after assembling")
 @click.option("--preview", "-p", is_flag=True, help="Open PDF/images in zathura after render")
 @click.option("--debug", "-d", is_flag=True, help="Enable debug output")
-def assemble(post_path: Path, title: str, render: bool, preview: bool, debug: bool) -> None:
+def assemble(post_path: Path, title: str, code_theme: str, fg_color: str, list_themes: bool, render: bool, preview: bool, debug: bool) -> None:
     """Regenerate main.tex from existing component files.
     
     Useful when component files exist but main.tex is missing or outdated.
     
     Example:
-        cd ~/social_posts/2026_02_04_physics
         vbsocial assemble
-        vbsocial assemble -r
+        vbsocial assemble --list-themes
+        vbsocial assemble --code-theme monokai
+        vbsocial assemble --code-theme 5
+        vbsocial assemble --fg-color maroon
+        vbsocial assemble --fg "#B62F54"
         vbsocial assemble -r -p  # render and preview
         vbsocial assemble -d  # debug mode
     """
+    from .code_themes import get_theme, list_themes as list_all_themes
+    
+    # List themes if requested
+    if list_themes:
+        click.echo(list_all_themes())
+        return
+    
     import os
     
     # Enable debug mode if flag is set
@@ -76,14 +113,22 @@ def assemble(post_path: Path, title: str, render: bool, preview: bool, debug: bo
         from ..agents.debug import reset_debug_cache
         reset_debug_cache()
     
+    # Resolve theme name
+    theme = get_theme(code_theme)
+    
+    # Resolve foreground color (hex or name)
+    fg_hex = resolve_color(fg_color)
+    
     # Check if valid post directory
     if not (post_path / "problem.tex").exists():
         raise click.ClickException(f"Not a valid post directory: {post_path} (no problem.tex)")
     
     click.echo(f"\n📁 Post directory: {post_path}")
+    click.echo(f"  Code theme: {theme}")
+    click.echo(f"  Foreground color: #{fg_hex}")
     
     if debug_enabled():
-        log_debug("assemble_start", {"post_path": str(post_path), "title": title})
+        log_debug("assemble_start", {"post_path": str(post_path), "title": title, "code_theme": theme, "fg_color": fg_hex})
     
     # Get existing components
     components = get_existing_components(post_path)
@@ -114,7 +159,7 @@ def assemble(post_path: Path, title: str, render: bool, preview: bool, debug: bo
     
     # Generate main.tex
     click.echo("\n📄 Generating main.tex...")
-    latex_content = assemble_modular_document(components, title=title, post_path=str(post_path))
+    latex_content = assemble_modular_document(components, title=title, post_path=str(post_path), code_theme=theme, fg_color=fg_hex)
     (post_path / "main.tex").write_text(latex_content)
     
     # Log main.tex
@@ -167,7 +212,11 @@ def assemble(post_path: Path, title: str, render: bool, preview: bool, debug: bo
             render_pdf_to_pngs(
                 pdf_path=pdf_path,
                 output_dir=images_dir,
-                dpi=300,
+                dpi=320,
+                blur=True,
+                blur_radius=4,
+                blur_opacity=0.3,
+                blur_offset=(3, 3),
             )
             click.echo("  ✓ Rendered images")
             

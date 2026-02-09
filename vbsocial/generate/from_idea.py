@@ -240,26 +240,9 @@ def generate(idea: str, slides: int | None, render: bool, name: str | None, code
     except Exception as e:
         raise click.ClickException(f"Content planning failed: {e}")
     
-    # Step 2: Generate captions
-    click.echo("\n✍️  Generating captions...")
-    try:
-        from ..agents.caption import generate_captions
-        content_summary = "\n".join([f"- {s.title}: {s.content[:100]}..." for s in plan.slides])
-        captions_output = generate_captions(
-            topic=plan.topic,
-            content_summary=content_summary,
-            difficulty=plan.difficulty,
-        )
-        captions = {
-            "facebook": captions_output.facebook,
-            "instagram": captions_output.instagram,
-            "linkedin": captions_output.linkedin,
-            "x": captions_output.x,
-            "youtube": captions_output.youtube,
-        }
-        click.echo("  ✓ Generated captions for all platforms")
-    except Exception as e:
-        raise click.ClickException(f"Caption generation failed: {e}")
+    # Step 2: Skip captions for now
+    click.echo("\n✍️  Skipping caption generation (run 'vbsocial fix' later)...")
+    captions = {}
     
     # Step 3: Generate code file if requested
     code_slide_file = None

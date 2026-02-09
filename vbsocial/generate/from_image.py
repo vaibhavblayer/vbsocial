@@ -144,6 +144,10 @@ def create_post_from_image(
     Returns:
         Path to created post folder
     """
+    from datetime import datetime
+    from ..tracker.db import PostDB, generate_short_uuid
+    import os
+    
     click.echo(f"\n🔍 Scanning {len(image_paths)} image(s) with vbagent...")
     qtype = question_type or "subjective"
     click.echo(f"  Using type: {qtype}")
@@ -160,21 +164,34 @@ def create_post_from_image(
     if not problem:
         raise click.ClickException("Could not extract problem from image(s)")
     
-    # Create folder first
-    today = date.today().strftime("%Y_%m_%d")
-    name = folder_name if folder_name else f"{today}_physics_problem"
+    # Generate UUID and create tracked folder
+    post_id = generate_short_uuid()
+    now = datetime.now()
+    today = now.strftime("%Y_%m_%d")
     
-    posts_dir = get_posts_dir()
-    post_path = posts_dir / name
+    # Create folder with UUID_date_status format
+    folder_name_final = f"{post_id}_{today}_draft"
     
-    if post_path.exists():
-        i = 1
-        while (posts_dir / f"{name}_{i}").exists():
-            i += 1
-        post_path = posts_dir / f"{name}_{i}"
+    posts_dir_path = os.environ.get("VBSOCIAL_POSTS_PATH", "~/social_posts")
+    posts_dir = Path(posts_dir_path).expanduser()
+    posts_dir.mkdir(parents=True, exist_ok=True)
     
+    post_path = posts_dir / folder_name_final
     post_path.mkdir(parents=True)
     (post_path / "images").mkdir()
+    
+    # Initialize database and track post
+    db = PostDB(posts_dir / "posts.db")
+    title = problem[:50].strip() + "..." if len(problem) > 50 else problem.strip()
+    db.create_post(
+        post_id=post_id,
+        folder_path=str(post_path),
+        source_type="image",
+        source_file=Path(image_paths[0]).name if image_paths else None,
+        title=title,
+    )
+    
+    click.echo(f"📝 Created tracked post [{post_id}]")
     
     # Track component files for main.tex
     components = []
@@ -265,24 +282,16 @@ def create_post_from_image(
     latex_content = assemble_modular_document(components, post_path=str(post_path))
     (post_path / "main.tex").write_text(latex_content)
     
-    # Generate captions
-    click.echo("✍️  Generating captions...")
-    from ..agents.caption import generate_captions
-    topic = problem[:50] + "..." if len(problem) > 50 else problem
-    captions_output = generate_captions(topic=topic, difficulty="intermediate")
-    captions = {
-        "facebook": captions_output.facebook,
-        "instagram": captions_output.instagram,
-        "linkedin": captions_output.linkedin,
-        "x": captions_output.x,
-        "youtube": captions_output.youtube,
-    }
+    # Generate captions - skip for now, will be done in fix command
+    click.echo("✍️  Skipping caption generation (run 'vbsocial fix' later)...")
     
-    # Write post.yaml
+    # Extract topic from problem
+    topic = problem[:50] + "..." if len(problem) > 50 else problem
+    
+    # Write post.yaml without captions
     yaml_content = {
         "title": topic,
         "date": today,
-        "captions": captions,
         "source_images": [str(p) for p in image_paths],
         "components": components,
     }
@@ -353,9 +362,18 @@ def from_image(image_paths: tuple[str, ...], idea: bool, alternate: bool, code: 
             else:
                 click.echo("  ⚠️  PDF not created, check LaTeX errors")
         
+        # Extract UUID from folder name
+        post_id = post_path.name.split("_")[0]
+        
         click.echo("\n" + "=" * 50)
         click.echo("✅ Post generated successfully!")
-        click.echo(f"\n📍 Location: {post_path}")
+        click.echo(f"\n📍 ID: {post_id}")
+        click.echo(f"📁 Location: {post_path}")
+        click.echo(f"\n  Next steps:")
+        click.echo(f"    vbsocial track list              # View all posts")
+        click.echo(f"    vbsocial fix {post_path}         # Generate captions")
+        click.echo(f"    vbsocial track status {post_id} ready  # Mark ready")
+        click.echo(f"    vbsocial track schedule {post_id} 2026-02-10  # Schedule")
         
     except Exception as e:
         raise click.ClickException(str(e))

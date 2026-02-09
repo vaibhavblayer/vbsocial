@@ -61,6 +61,30 @@ def blur_image(image: Image.Image, radius: int = 2, opacity: float = 1.0) -> Ima
     return blurred
 
 
+def create_blurred_version(
+    image: Image.Image,
+    blur_radius: int = 2,
+    blur_opacity: float = 1,
+) -> Image.Image:
+    """Create blurred version of the original image.
+    
+    Args:
+        image: Source RGBA image
+        blur_radius: Blur radius
+        blur_opacity: Opacity of blurred image
+        
+    Returns:
+        Blurred RGBA image
+    """
+    if image.mode != "RGBA":
+        image = image.convert("RGBA")
+    
+    # Blur the original image itself
+    blurred = blur_image(image, radius=blur_radius, opacity=blur_opacity)
+    
+    return blurred
+
+
 def color_layer(image: Image.Image, color: tuple[int, int, int], opacity: float = 1.0) -> Image.Image:
     """Replace image colors with solid color, keeping alpha.
     
@@ -111,51 +135,28 @@ def stack_images(front: Image.Image, background: Image.Image, position: tuple[in
     return bg
 
 
-def render_with_blur_shadow(
+def create_blurred_version(
     image: Image.Image,
-    blur_radius: int = 15,
-    blur_opacity: float = 0.6,
-    shadow_color: tuple[int, int, int] = (0, 0, 0),
-    shadow_opacity: float = 0.4,
-    shadow_offset: tuple[int, int] = (5, 5),
+    blur_radius: int = 25,
+    blur_opacity: float = 0.8,
 ) -> Image.Image:
-    """Create image with blur glow and shadow effect.
-    
-    Pipeline:
-    1. Create blurred version (glow)
-    2. Create shadow layer (colored + blurred)
-    3. Stack: shadow -> blur -> original
+    """Create blurred version of the image.
     
     Args:
         image: Source RGBA image
-        blur_radius: Blur radius for glow
-        blur_opacity: Opacity of blur layer
-        shadow_color: RGB color for shadow
-        shadow_opacity: Opacity of shadow
-        shadow_offset: Shadow offset (x, y)
+        blur_radius: Blur radius
+        blur_opacity: Opacity of blurred image
         
     Returns:
-        Composited RGBA image
+        Blurred RGBA image
     """
     if image.mode != "RGBA":
         image = image.convert("RGBA")
     
-    # Create blur layer (glow effect)
-    blur_layer = blur_image(image, radius=blur_radius, opacity=blur_opacity)
+    # Blur the entire image
+    blurred = blur_image(image, radius=blur_radius, opacity=blur_opacity)
     
-    # Create shadow layer
-    shadow = color_layer(image, shadow_color, opacity=shadow_opacity)
-    shadow = blur_image(shadow, radius=blur_radius)
-    
-    # Create canvas
-    canvas = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    
-    # Stack: shadow (offset) -> blur -> original
-    canvas.paste(shadow, shadow_offset, shadow)
-    canvas.paste(blur_layer, (0, 0), blur_layer)
-    canvas.paste(image, (0, 0), image)
-    
-    return canvas
+    return blurred
 
 
 def render_pdf_to_pngs(
@@ -163,75 +164,114 @@ def render_pdf_to_pngs(
     output_dir: Path,
     dpi: int = 300,
     blur: bool = True,
-    blur_radius: int = 15,
-    blur_opacity: float = 0.6,
-    shadow_color: tuple[int, int, int] = (0, 0, 0),
-    shadow_opacity: float = 0.4,
-    shadow_offset: tuple[int, int] = (5, 5),
+    blur_radius: int = 25,
+    blur_opacity: float = 0.8,
+    blur_offset: tuple[int, int] = (5, 5),
     bg_image_path: Path | None = None,
     bg_color: tuple[int, int, int] | None = None,
     prefix: str = "slide",
+    debug: bool = False,
 ) -> list[Path]:
-    """Render PDF to PNG images with blur/shadow and background.
-    
+    """Render PDF to PNG images with blur and background.
+
     Pipeline:
-    1. PDF -> PNG (no border)
-    2. Add blur glow + shadow
-    3. Stack on background image or solid color
+    1. PDF -> PNG (transparent background) = original
+    2. Blur the original image = blurred_original
+    3. Generate background PNG from bg.tex if not provided
+    4. Stack: bg + blurred_original (offset 5px,5px) + original (centered, no offset)
+
+    Args:
+        debug: If True, save intermediate stages in .debug/ folder
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Load background image if specified
+
+    # Create debug directory if needed
+    debug_dir = None
+    if debug:
+        debug_dir = output_dir / ".debug"
+        debug_dir.mkdir(exist_ok=True)
+
+    # Generate or load background
     bg_image = None
     if bg_image_path and bg_image_path.exists():
         bg_image = Image.open(bg_image_path)
-    elif not bg_color and DEFAULT_BG_IMAGE.exists():
-        bg_image = Image.open(DEFAULT_BG_IMAGE)
-    
+    elif not bg_color:
+        # Generate default skin background
+        from .bg_gen import generate_bg_png
+        bg_temp = output_dir / ".bg_temp.png"
+        generate_bg_png(bg_temp, color="skin", dpi=dpi)
+        bg_image = Image.open(bg_temp)
+
+    # Save background in debug mode
+    if debug and bg_image:
+        bg_image.save(debug_dir / "bg.png", "PNG")
+
     # Convert PDF to images
     pages = pdf_to_images(pdf_path, dpi=dpi)
-    
+
     output_paths = []
     for i, page in enumerate(pages, 1):
-        # Add blur/shadow effect
+        # Stage 1: Original (no blur, no bg)
+        original = page.copy()
+        if debug:
+            original.save(debug_dir / f"{prefix}-{i}_1_original.png", "PNG")
+
+        # Stage 2: Create blurred version of original image
+        blurred_original = None
         if blur:
-            page = render_with_blur_shadow(
+            blurred_original = create_blurred_version(
                 page,
                 blur_radius=blur_radius,
                 blur_opacity=blur_opacity,
-                shadow_color=shadow_color,
-                shadow_opacity=shadow_opacity,
-                shadow_offset=shadow_offset,
             )
-        
-        # Stack on background
-        if bg_image:
-            page = stack_images(page, bg_image)
-        elif bg_color:
-            bg = Image.new("RGBA", page.size, (*bg_color, 255))
-            page = stack_images(page, bg)
-        
-        # Save
+            if debug:
+                blurred_original.save(debug_dir / f"{prefix}-{i}_2_blurred.png", "PNG")
+
+        # Stage 3: Stack on background: bg + blurred_original (offset) + original (centered)
+        final = original
+        if bg_image or bg_color:
+            # Create background canvas
+            if bg_image:
+                bg_resized = bg_image.resize((original.width, original.height), Image.Resampling.LANCZOS)
+                canvas = bg_resized.convert("RGBA")
+            else:
+                canvas = Image.new("RGBA", original.size, (*bg_color, 255))
+            
+            # Stack: blurred original (with offset) then sharp original (centered)
+            if blur and blurred_original:
+                canvas.paste(blurred_original, blur_offset, blurred_original)
+            canvas.paste(original, (0, 0), original)
+            final = canvas
+
+        # Save final
         output_path = output_dir / f"{prefix}-{i}.png"
-        page.save(output_path, "PNG")
+        final.save(output_path, "PNG")
         output_paths.append(output_path)
-    
+
+        if debug:
+            # Also save as stage 3
+            final.save(debug_dir / f"{prefix}-{i}_3_final.png", "PNG")
+
+    # Cleanup temp background
+    bg_temp = output_dir / ".bg_temp.png"
+    if bg_temp.exists():
+        bg_temp.unlink()
+
     return output_paths
 
 
 @click.command(name="render")
 @click.argument("pdf_path", type=click.Path(exists=True, path_type=Path))
 @click.option("--output", "-o", type=click.Path(path_type=Path), help="Output directory")
-@click.option("--dpi", "-d", default=300, help="Resolution (default: 300)")
-@click.option("--no-blur", is_flag=True, help="Disable blur/shadow effect")
-@click.option("--blur-radius", "-r", default=15, help="Blur radius (default: 15)")
-@click.option("--blur-opacity", default=0.6, help="Blur opacity (default: 0.6)")
-@click.option("--shadow-color", type=(int, int, int), default=(0, 0, 0), help="Shadow RGB color")
-@click.option("--shadow-opacity", default=0.4, help="Shadow opacity (default: 0.4)")
-@click.option("--shadow-offset", type=(int, int), default=(5, 5), help="Shadow offset x y")
+@click.option("--dpi", "-d", default=320, help="Resolution (default: 300)")
+@click.option("--no-blur", is_flag=True, help="Disable blur effect")
+@click.option("--blur-radius", "-r", default=4, help="Blur radius (default: 25)")
+@click.option("--blur-opacity", default=0.3, help="Blur opacity (default: 0.8)")
+@click.option("--blur-offset", type=(int, int), default=(3, 3), help="Blur offset x y (default: 5 5)")
 @click.option("--bg", type=click.Path(exists=True, path_type=Path), help="Background image path")
-@click.option("--color", "-c", help="Background color (hex or name: red, black, white)")
+@click.option("--color", "-c", help="Background color (hex or name: skin, red, black, white)")
 @click.option("--prefix", "-p", default="slide", help="Filename prefix")
+@click.option("--debug", is_flag=True, help="Save intermediate stages in .debug/ folder")
 def render_cmd(
     pdf_path: Path,
     output: Path | None,
@@ -239,20 +279,22 @@ def render_cmd(
     no_blur: bool,
     blur_radius: int,
     blur_opacity: float,
-    shadow_color: tuple[int, int, int],
-    shadow_opacity: float,
-    shadow_offset: tuple[int, int],
+    blur_offset: tuple[int, int],
     bg: Path | None,
     color: str | None,
     prefix: str,
+    debug: bool,
 ) -> None:
-    """Render PDF to PNG images with blur glow, shadow, and background.
+    """Render PDF to PNG images with blur and background.
+    
+    Stacking order: bg + blur (offset) + original (centered)
     
     Example:
         vbsocial render main.pdf
         vbsocial render main.pdf --bg ~/backgrounds/bg.jpg
         vbsocial render main.pdf -c black
-        vbsocial render main.pdf --blur-radius 20 --shadow-opacity 0.5
+        vbsocial render main.pdf --blur-radius 30 --blur-opacity 0.9
+        vbsocial render main.pdf --debug
     """
     output_dir = output or pdf_path.parent / "images"
     
@@ -267,6 +309,9 @@ def render_cmd(
             "green": (30, 120, 60),
             "purple": (100, 40, 140),
             "orange": (220, 120, 30),
+            "matteblack": (26, 26, 26),
+            "skin": (252, 237, 219),
+            "maroon": (182, 47, 84),
         }
         if color.lower() in color_map:
             bg_color = color_map[color.lower()]
@@ -279,14 +324,13 @@ def render_cmd(
     
     click.echo(f"🖼️  Rendering {pdf_path.name}...")
     click.echo(f"  DPI: {dpi}")
-    click.echo(f"  Blur: {'no' if no_blur else f'radius={blur_radius}, opacity={blur_opacity}'}")
-    click.echo(f"  Shadow: color={shadow_color}, opacity={shadow_opacity}, offset={shadow_offset}")
+    click.echo(f"  Blur: {'no' if no_blur else f'radius={blur_radius}, opacity={blur_opacity}, offset={blur_offset}'}")
     if bg:
         click.echo(f"  Background: {bg}")
     elif bg_color:
         click.echo(f"  Background: #{bg_color[0]:02x}{bg_color[1]:02x}{bg_color[2]:02x}")
     else:
-        click.echo(f"  Background: {DEFAULT_BG_IMAGE}")
+        click.echo(f"  Background: auto-generated skin color")
     
     try:
         paths = render_pdf_to_pngs(
@@ -296,17 +340,23 @@ def render_cmd(
             blur=not no_blur,
             blur_radius=blur_radius,
             blur_opacity=blur_opacity,
-            shadow_color=shadow_color,
-            shadow_opacity=shadow_opacity,
-            shadow_offset=shadow_offset,
+            blur_offset=blur_offset,
             bg_image_path=bg,
             bg_color=bg_color,
             prefix=prefix,
+            debug=debug,
         )
         
         click.echo(f"\n✓ Created {len(paths)} image(s) in {output_dir}")
         for p in paths:
             click.echo(f"  - {p.name}")
+        
+        if debug:
+            click.echo(f"\n🔍 Debug stages saved in {output_dir / '.debug'}")
+            click.echo("  - bg.png (background)")
+            click.echo("  - *_1_original.png (sharp original, no bg)")
+            click.echo("  - *_2_blurred.png (blurred original)")
+            click.echo("  - *_3_final.png (bg + blurred original offset + sharp original centered)")
             
     except Exception as e:
         raise click.ClickException(str(e))
